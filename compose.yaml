@@ -1,0 +1,82 @@
+# aximote-exporter
+#
+#   docker compose up -d                       exporter only (metrics on :9684)
+#   docker compose --profile history up -d     + Postgres for trips, charges and the map
+#   docker compose --profile stack up -d       + Prometheus, Alertmanager, Grafana, Postgres
+#
+# Copy .env.example to .env and set AXIMOTE_TOKEN first.
+
+services:
+  aximote-exporter:
+    image: ghcr.io/ahmedbaig/aximote-exporter:latest
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+        required: false
+    ports:
+      # /metrics carries the car's live position: localhost only unless you
+      # put it behind something that authenticates.
+      - "127.0.0.1:9684:9684"
+
+  postgres:
+    profiles: [history, stack]
+    image: postgres:17
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: aximote
+      POSTGRES_PASSWORD: ${AXIMOTE_PG_PASSWORD:-change-me}
+      POSTGRES_DB: aximote
+      AXIMOTE_TZ: ${AXIMOTE_TZ:-UTC}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./examples/stack/postgres-init.sh:/docker-entrypoint-initdb.d/10-aximote-tz.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U aximote -d aximote"]
+      interval: 10s
+      retries: 10
+
+  prometheus:
+    profiles: [stack]
+    image: prom/prometheus:latest
+    restart: unless-stopped
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.retention.time=400d
+    volumes:
+      - ./examples/stack/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./alerts:/etc/prometheus/rules:ro
+      - promdata:/prometheus
+    ports:
+      - "127.0.0.1:9090:9090"
+
+  alertmanager:
+    profiles: [stack]
+    image: prom/alertmanager:latest
+    restart: unless-stopped
+    volumes:
+      - ./examples/stack/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+    ports:
+      - "127.0.0.1:9093:9093"
+
+  grafana:
+    profiles: [stack]
+    image: grafana/grafana:latest
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-admin}
+      AXIMOTE_PG_PASSWORD: ${AXIMOTE_PG_PASSWORD:-change-me}
+    volumes:
+      - ./examples/stack/grafana/datasources.yml:/etc/grafana/provisioning/datasources/aximote.yml:ro
+      - ./examples/stack/grafana/dashboards.yml:/etc/grafana/provisioning/dashboards/aximote.yml:ro
+      - ./grafana:/var/lib/grafana/dashboards/aximote:ro
+      - grafanadata:/var/lib/grafana
+    ports:
+      - "127.0.0.1:3000:3000"
+
+volumes:
+  pgdata:
+  promdata:
+  grafanadata:

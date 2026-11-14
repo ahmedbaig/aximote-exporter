@@ -1,0 +1,24 @@
+global:
+  scrape_interval: 60s
+  evaluation_interval: 60s
+
+rule_files:
+  - /etc/prometheus/rules/*.yml
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ["alertmanager:9093"]
+
+scrape_configs:
+  # The exporter polls Aximote every 180 s, so scraping faster returns the same
+  # snapshot. 60 s keeps a failed poll visible within a minute. The job name must
+  # stay "aximote": AximoteExporterDown alerts on up{job="aximote"}.
+  - job_name: aximote
+    scrape_timeout: 15s
+    static_configs:
+      - targets: ["aximote-exporter:9684"]
+
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]

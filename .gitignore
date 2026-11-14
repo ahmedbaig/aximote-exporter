@@ -1,0 +1,10 @@
+.env
+__pycache__/
+*.pyc
+.venv/
+venv/
+.ruff_cache/
+# macOS writes AppleDouble sidecars (._name) that match *.sql and break the
+# schema loader if they reach the image.
+._*
+.DS_Store

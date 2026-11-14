@@ -1,0 +1,122 @@
+# Prometheus alerting rules for aximote-exporter. Add this file to `rule_files`
+# in prometheus.yml (the bundled stack in examples/stack does this for you).
+#
+# Design note: every freshness alert fires on the age of a *reading*, never on
+# whether a process is up. An exporter that is running happily while the in-car
+# agent has stopped reporting looks identical to a parked car from any process
+# check, and the API makes this worse by stamping each reading separately -- a
+# current status poll routinely carries a GPS fix hours older. So each reading is
+# alerted on its own, with a threshold matched to how often that reading actually
+# moves.
+
+groups:
+  - name: aximote-collector
+    rules:
+      - alert: AximoteExporterDown
+        expr: up{job="aximote"} == 0
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Aximote exporter is not being scraped"
+          description: >-
+            Prometheus cannot scrape {{ $labels.instance }}. The container on
+            the exporter host is stopped, crash-looping, or the port is not published.
+
+      - alert: AximoteApiFailing
+        expr: aximote_api_up == 0
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Aximote API polling has been failing for 15m"
+          description: >-
+            The exporter is up but every poll is failing. Check
+            aximote_api_errors_total by code, then the container logs.
+
+      - alert: AximoteTokenRejected
+        expr: increase(aximote_api_errors_total{code=~"unauthorized|pro_required"}[15m]) > 0
+        labels:
+          severity: critical
+        annotations:
+          summary: "Aximote rejected the personal access token"
+          description: >-
+            Error code {{ $labels.code }}. The exporter cannot re-authenticate
+            itself. Issue a new PAT in the Aximote app, update AXIMOTE_TOKEN in
+            /opt/aximote/.env on the exporter host and restart the container.
+
+      - alert: AximoteRateLimited
+        expr: increase(aximote_api_errors_total{code="rate_limited"}[30m]) > 3
+        labels:
+          severity: warning
+        annotations:
+          summary: "Aximote API is rate limiting the exporter"
+          description: >-
+            More than three 429 responses in 30 minutes. Raise
+            AXIMOTE_STATE_INTERVAL and AXIMOTE_EVENT_INTERVAL.
+
+      - alert: AximoteNoVehicles
+        expr: aximote_vehicles == 0
+        for: 1h
+        labels:
+          severity: warning
+        annotations:
+          summary: "Aximote reports no vehicles for this account"
+          description: >-
+            Polling succeeds but the account has no vehicles, so every panel will
+            be empty. Confirm the PAT belongs to the account that owns the car.
+
+  - name: aximote-vehicle-data
+    rules:
+      - alert: AximoteStatusStale
+        expr: time() - aximote_field_captured_timestamp_seconds{field="state"} > 7200
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.name }} has not reported status for over 2h"
+          description: >-
+            The in-car agent has stopped sending status. This is the alert that a
+            process check cannot produce: the exporter is healthy and the API is
+            answering, but the data behind it has stopped moving.
+
+      - alert: AximoteLocationStale
+        expr: time() - aximote_field_captured_timestamp_seconds{field="location"} > 21600
+        for: 30m
+        labels:
+          severity: info
+        annotations:
+          summary: "{{ $labels.name }} GPS fix is over 6h old"
+          description: >-
+            The location reading lags the status reading by design -- a two-hour-old
+            fix on a parked car is normal, which is why this threshold is 6h and the
+            severity is info. Map panels will show a stale position until it clears.
+
+      - alert: AximoteBatteryLow
+        expr: aximote_battery_level_percent < 20
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.name }} battery at {{ $value | printf \"%.0f\" }}%"
+          description: "Traction battery below 20%."
+
+      - alert: AximoteFuelLow
+        expr: aximote_fuel_level_percent < 15
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.name }} fuel at {{ $value | printf \"%.0f\" }}%"
+          description: >-
+            Fuel below 15%. Never fires for an electric vehicle: the API reports
+            null and the exporter omits the series rather than publishing a zero.
+
+      - alert: AximoteRangeLow
+        expr: aximote_range_km < 50
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.name }} range down to {{ $value | printf \"%.0f\" }} km"
+          description: "Estimated remaining range below 50 km."

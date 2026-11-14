@@ -1,0 +1,29 @@
+name: ci
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - run: pip install -r requirements.txt
+      - run: python -m compileall -q aximote_exporter ci
+      - run: python -c "import aximote_exporter.config, aximote_exporter.metrics, aximote_exporter.api"
+      - run: python ci/check_dashboard.py grafana/aximote-vehicle.json
+      - name: promtool check rules
+        run: docker run --rm -v "$PWD/alerts:/rules:ro" --entrypoint promtool prom/prometheus:latest check rules /rules/aximote.rules.yml
+      - name: compose config
+        run: cp .env.example .env && docker compose --profile stack config -q
+  docker:
+    needs: test
+    if: github.event_name == 'push'
+    uses: ahmedbaig/go-backend-pipelines/.github/workflows/docker.yml@main
+    permissions:
+      contents: read
+      packages: write
