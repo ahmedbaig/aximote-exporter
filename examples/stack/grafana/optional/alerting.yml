@@ -1,0 +1,128 @@
+apiVersion: 1
+
+contactPoints:
+  - orgId: 1
+    name: telegram
+    receivers:
+      - uid: aximote-telegram
+        type: telegram
+        settings:
+          bottoken: $TELEGRAM_BOT_TOKEN
+          chatid: $TELEGRAM_CHAT_ID
+          parse_mode: HTML
+        disableResolveMessage: false
+
+policies:
+  - orgId: 1
+    receiver: telegram
+    group_by: [grafana_folder, alertname]
+    group_wait: 30s
+    group_interval: 5m
+    repeat_interval: 6h
+
+groups:
+  - orgId: 1
+    name: aximote
+    folder: Aximote
+    interval: 1m
+    rules:
+      - uid: aximote-battery-low
+        title: Battery low
+        condition: C
+        for: 30m
+        labels: { severity: warning }
+        annotations:
+          summary: "{{ $labels.name }} battery is {{ humanize $values.A.Value }}%"
+        data:
+          - refId: A
+            datasourceUid: prometheus
+            relativeTimeRange: { from: 600, to: 0 }
+            model: { refId: A, expr: "aximote_battery_level_percent", instant: true }
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions: [{ evaluator: { type: lt, params: [20] } }]
+
+      - uid: aximote-range-low
+        title: Range low
+        condition: C
+        for: 30m
+        labels: { severity: warning }
+        annotations:
+          summary: "{{ $labels.name }} has {{ humanize $values.A.Value }} km of range left"
+        data:
+          - refId: A
+            datasourceUid: prometheus
+            relativeTimeRange: { from: 600, to: 0 }
+            model: { refId: A, expr: "aximote_range_km", instant: true }
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions: [{ evaluator: { type: lt, params: [50] } }]
+
+      - uid: aximote-location-stale
+        title: Location stale
+        condition: C
+        for: 30m
+        labels: { severity: info }
+        annotations:
+          summary: "{{ $labels.name }} GPS fix is {{ humanizeDuration $values.A.Value }} old"
+        data:
+          - refId: A
+            datasourceUid: prometheus
+            relativeTimeRange: { from: 600, to: 0 }
+            model: { refId: A, expr: 'time() - aximote_field_captured_timestamp_seconds{field="location"}', instant: true }
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions: [{ evaluator: { type: gt, params: [21600] } }]
+
+      - uid: aximote-status-stale
+        title: Status stale
+        condition: C
+        for: 30m
+        labels: { severity: warning }
+        annotations:
+          summary: "{{ $labels.name }} has not reported status for {{ humanizeDuration $values.A.Value }}"
+        data:
+          - refId: A
+            datasourceUid: prometheus
+            relativeTimeRange: { from: 600, to: 0 }
+            model: { refId: A, expr: 'time() - aximote_field_captured_timestamp_seconds{field="state"}', instant: true }
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions: [{ evaluator: { type: gt, params: [7200] } }]
+
+      - uid: aximote-token-rejected
+        title: Aximote token rejected
+        condition: C
+        for: 0s
+        labels: { severity: critical }
+        annotations:
+          summary: "Aximote rejected the access token. Create a new one and restart the exporter."
+        noDataState: OK
+        data:
+          - refId: A
+            datasourceUid: prometheus
+            relativeTimeRange: { from: 900, to: 0 }
+            model: { refId: A, expr: 'sum(increase(aximote_api_errors_total{code=~"unauthorized|pro_required"}[15m])) or vector(0)', instant: true }
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions: [{ evaluator: { type: gt, params: [0] } }]

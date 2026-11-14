@@ -6,6 +6,10 @@ One small Python service polls the Aximote public API with your personal access 
 
 Not affiliated with Aximote.
 
+![The bundled Grafana dashboard, live](docs/images/dashboard.png)
+
+<sub>A real car on the bundled dashboard (last 30 days). Map and place panels are blurred here because they show where the car lives; on your own install they render as maps. [Full dashboard](docs/images/dashboard-full.png).</sub>
+
 ## Quick start (about 5 minutes)
 
 You need Docker with Compose and an Aximote Pro account.
@@ -101,6 +105,10 @@ Then in Grafana: add a PostgreSQL datasource for the `aximote` database (if you 
 
 How it fits together: **Prometheus** evaluates the rules in `alerts/aximote.rules.yml` every minute → a rule that stays true for its `for:` time **fires** → **Alertmanager** groups it and sends it to a **receiver** (Discord, email, Telegram, ntfy…).
 
+![Alert rules in Grafana](docs/images/grafana-alert-rules.png)
+
+<sub>Both kinds side by side in Grafana: the five Grafana-managed rules from <code>examples/stack/grafana/optional/alerting.yml</code> (top, "Provisioned") and the Prometheus rules from <code>alerts/aximote.rules.yml</code> (below), read through the Prometheus datasource.</sub>
+
 ### The rules
 
 | Alert | Fires when | What to do |
@@ -147,7 +155,9 @@ receivers:
 docker compose --profile stack restart alertmanager
 ```
 
-Discord, email, Telegram and ntfy examples are in the file. The default config already repeats token and API problems hourly and mutes staleness alerts while the exporter itself is down.
+![Telegram contact point in Grafana](docs/images/grafana-telegram-contact-point.png)
+
+Discord, email, Telegram and ntfy examples are in the file. **Step-by-step Telegram setup, and how to run the alerts from Grafana instead, are in [docs/alerting.md](docs/alerting.md).** The default config already repeats token and API problems hourly and mutes staleness alerts while the exporter itself is down.
 
 ### Test it
 

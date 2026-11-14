@@ -1,0 +1,13 @@
+# Grafana-managed alerts to Telegram. Use together with the stack profile:
+#
+#   docker compose -f compose.yaml -f compose.grafana-alerts.yaml --profile stack up -d
+#
+# Needs TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID in .env (see docs/alerting.md).
+
+services:
+  grafana:
+    environment:
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:?set TELEGRAM_BOT_TOKEN in .env}
+      TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:?set TELEGRAM_CHAT_ID in .env}
+    volumes:
+      - ./examples/stack/grafana/optional/alerting.yml:/etc/grafana/provisioning/alerting/aximote.yml:ro
